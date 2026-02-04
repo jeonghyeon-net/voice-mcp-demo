@@ -3,29 +3,57 @@
 Claude Code에서 음성으로 대화할 수 있게 해주는 MCP 서버입니다.
 
 - **STT**: MLX Whisper (Apple Silicon 최적화)
-- **TTS**: Kokoro (일본어)
+- **TTS**: Kokoro (다국어 지원: 일본어, 영어, 한국어, 중국어 등)
 - **VAD**: Silero VAD + RMS 이중 필터
+
+## 기본 설정
+
+> ⚠️ 현재 코드는 **한국어 입력 → 일본어 출력**으로 하드코딩되어 있습니다.
+> 다른 언어로 변경하려면 [언어 변경 가이드](#언어-변경-가이드) 섹션을 참고하세요.
 
 ## 요구사항
 
-- macOS (Apple Silicon)
-- Python 3.11+
-- Claude Code
+- macOS (Apple Silicon M1/M2/M3)
+- Python 3.11 이상
+- Claude Code CLI
+- 마이크 (맥북 내장 마이크 또는 외장)
 
 ## 설치
 
+### 1. 저장소 클론
+
 ```bash
-# 저장소 클론
 git clone https://github.com/jeonghyeon-net/vtuber.git
 cd vtuber
+```
 
-# 가상환경 생성
+### 2. Python 3.11 설치 (없는 경우)
+
+```bash
+brew install python@3.11
+```
+
+### 3. 가상환경 생성 및 활성화
+
+```bash
 python3.11 -m venv venv
 source venv/bin/activate
+```
 
-# 의존성 설치
+### 4. 의존성 설치
+
+```bash
 pip install -r requirements.txt
 ```
+
+### 5. 설치 확인
+
+```bash
+# VAD 테스트 (마이크 테스트)
+python test_vad.py
+```
+
+말하면 음성 확률이 표시되어야 합니다.
 
 ## MCP 설정
 
@@ -118,12 +146,28 @@ MIT
 ```python
 # 1. TTS 언어 코드 변경 (get_tts 함수)
 _tts = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M')
-# 'j' = 일본어, 'a' = 미국 영어, 'b' = 영국 영어
+# 'a' = 미국 영어, 'b' = 영국 영어, 'j' = 일본어
+# 'k' = 한국어, 'z' = 중국어, 'f' = 프랑스어 등
 
 # 2. 음성 변경 (speak 함수의 기본값)
 def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
 # 영어 음성: af_heart, af_bella, am_adam, am_michael 등
 ```
+
+### Kokoro 지원 언어
+
+| 코드 | 언어 |
+|------|------|
+| `a` | 미국 영어 |
+| `b` | 영국 영어 |
+| `j` | 일본어 |
+| `k` | 한국어 |
+| `z` | 중국어 |
+| `f` | 프랑스어 |
+| `e` | 스페인어 |
+| `i` | 이탈리아어 |
+| `p` | 포르투갈어 |
+| `h` | 힌디어 |
 
 ### 영어 음성 목록
 
