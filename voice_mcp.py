@@ -47,6 +47,7 @@ mcp = FastMCP("voice")
 # 모델 사전 로드
 _tts = None
 _whisper_loaded = False
+_first_load_done = False
 
 def get_tts():
     global _tts
@@ -64,6 +65,16 @@ def warmup_whisper():
         )
         _whisper_loaded = True
 
+def first_load_notice():
+    """첫 로드 시 안내 음성"""
+    tts = get_tts()
+    for _, _, audio in tts("しょきかちゅう、しばらくおまちください", voice="jf_alpha", speed=1.2):
+        if audio is not None:
+            sd.play(audio, 24000)
+            sd.wait()
+            break
+    warmup_whisper()
+
 SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 30
 FRAME_SIZE = int(SAMPLE_RATE * FRAME_DURATION_MS / 1000)
@@ -77,23 +88,21 @@ def _generate_beep(freq: int, duration: float, volume: float) -> np.ndarray:
     tone[-fade:] *= np.linspace(1, 0, fade)
     return tone.astype(np.float32)
 
-_beep_start_sound = _generate_beep(880, 0.25, 0.7)
-_beep_end_sound = _generate_beep(440, 0.15, 0.6)
+_beep_start_sound = _generate_beep(600, 0.1, 0.4)
+_beep_end_sound = _generate_beep(400, 0.08, 0.3)
 
 def beep_start():
     """듣기 시작 효과음"""
     sd.play(_beep_start_sound, 24000)
     sd.wait()
+    time.sleep(0.3)
 
 def beep_end():
     """듣기 종료 효과음"""
     sd.play(_beep_end_sound, 24000)
     sd.wait()
 
-# 서버 시작 시 모델 로드 & 효과음 테스트
-warmup_whisper()
-get_tts()
-beep_start()
+# 모델은 첫 사용 시 로드됨 (lazy loading)
 
 
 @mcp.tool()
@@ -101,13 +110,9 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
     """
     마이크로 음성을 듣고 텍스트로 변환합니다.
 
-    ⚠️ 필수 플로우:
-    1. listen() 결과를 받으면
-    2. 먼저 speak()로 "~します" 등 할 일을 짧게 말하고
-    3. 그 다음 실제 작업 수행
-    4. 맥락에 따라 listen() 계속 또는 종료
+    사용자가 "listen", "듣기", "음성" 등을 입력하면 이 도구를 호출하세요.
 
-    예: "ファイルを確認します" → 파일 읽기 → "見つかりました" → ...
+    ⚠️ 다른 도구 호출 전후로 speak() 호출 필수. 진행 상황도 수시로 speak().
 
     Args:
         timeout_seconds: 최대 대기 시간 (초)
@@ -116,6 +121,11 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
     Returns:
         인식된 텍스트
     """
+    global _first_load_done
+    if not _first_load_done:
+        first_load_notice()
+        _first_load_done = True
+
     vad = webrtcvad.Vad(2)
     speech_buffer = []
     silence_count = 0
@@ -128,6 +138,7 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
 
     beep_start()  # 🔊 듣기 시작
 
+    captured_audio = None
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, blocksize=FRAME_SIZE) as stream:
         while frame_count < max_frames:
             chunk, _ = stream.read(FRAME_SIZE)
@@ -155,21 +166,26 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
                         rms = np.sqrt(np.mean(audio_data ** 2))
 
                         if rms >= 0.01:
-                            beep_end()  # 🔊 인식 시작
-                            result = mlx_whisper.transcribe(
-                                audio_data,
-                                path_or_hf_repo="mlx-community/whisper-medium-mlx",
-                                language=language
-                            )
-                            text = result.get("text", "").strip()
-                            if text:
-                                return f"""[사용자]: {text}
-
-⚠️ 다른 도구 호출 전후로 speak() 호출 필수. 진행 상황도 수시로 speak()."""
+                            captured_audio = audio_data
+                            break  # 스트림 먼저 닫기
 
                     speech_buffer = []
                     silence_count = 0
                     is_speaking = False
+
+    # 스트림 닫힌 후 처리
+    if captured_audio is not None:
+        beep_end()  # 🔊 인식 시작
+        result = mlx_whisper.transcribe(
+            captured_audio,
+            path_or_hf_repo="mlx-community/whisper-medium-mlx",
+            language=language
+        )
+        text = result.get("text", "").strip()
+        if text:
+            return f"""[사용자]: {text}
+
+⚠️ 다른 도구 호출 전후로 speak() 호출 필수. 진행 상황도 수시로 speak()."""
 
     return "[타임아웃] 음성이 감지되지 않았습니다."
 
@@ -203,23 +219,17 @@ def speak(text: str, voice: str = "jf_alpha", speed: float = 1.0) -> str:
     """
     일본어 음성으로 말합니다.
 
-    ⚠️ 다른 도구 호출 전후로 반드시 speak() 호출!
-    - Read/Write/Edit 전: "確認します", "作ります", "修正します"
-    - Bash 전: "実行します", "テストします"
-    - 도구 호출 후: "できました", "見つけました", "エラーです"
-    - 여러 작업 시: 각 단계마다 speak() 호출
+    ⚠️ 영어/알파벳 금지! 일본어(한자/히라가나/카타카나)만 사용!
 
-    2-3단어로 짧게! 예: "次はテストします"
-
-    대화 종료: 모든 작업 완료 후 listen() 생략
+    ⚠️ speak() 후 반드시 listen() 호출! 예외: 사용자가 "끝", "바이바이", "고마워" 등 종료 신호를 보냈을 때만 생략
 
     Args:
-        text: 일본어 (짧게!)
+        text: 일본어 텍스트
         voice: 음성
         speed: 속도
 
     Returns:
-        재생 완료
+        "→ listen() 호출하세요" (종료 신호 없으면)
     """
     tts = get_tts()
     text_processed = preprocess_for_tts(text)
@@ -229,7 +239,7 @@ def speak(text: str, voice: str = "jf_alpha", speed: float = 1.0) -> str:
             sd.wait()
             break
 
-    return "再生完了"
+    return "→ listen() 호출하세요"
 
 
 if __name__ == "__main__":
