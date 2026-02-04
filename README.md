@@ -3,7 +3,7 @@
 Claude Code에서 음성으로 대화할 수 있게 해주는 MCP 서버입니다.
 
 - **STT**: MLX Whisper (Apple Silicon 최적화)
-- **TTS**: Kokoro (다국어 지원: 일본어, 영어, 한국어, 중국어 등)
+- **TTS**: Kokoro (다국어 지원: 일본어, 영어, 중국어 등)
 - **VAD**: Silero VAD + RMS 이중 필터
 
 > ⚠️ 현재 코드는 **한국어 입력 → 일본어 출력**으로 하드코딩되어 있습니다.
@@ -182,7 +182,6 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
 | `a` | 미국 영어 |
 | `b` | 영국 영어 |
 | `j` | 일본어 |
-| `k` | 한국어 |
 | `z` | 중국어 |
 | `f` | 프랑스어 |
 | `e` | 스페인어 |
