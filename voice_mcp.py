@@ -119,6 +119,8 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
     beep_start()  # 🔊 듣기 시작
 
     audio_buffer = []
+    lookback_buffer = []  # 음성 시작 전 프레임 임시 저장
+    LOOKBACK_FRAMES = 10  # 약 0.32초 분량 저장
     is_speaking = False
     silence_samples = 0
     speech_samples = 0  # 실제 발화 샘플 수
@@ -146,10 +148,20 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
             rms = np.sqrt(np.mean(chunk ** 2))
             is_voice = speech_prob > 0.85 and rms > 0.02
 
+            # look-back 버퍼 관리 (음성 시작 전에도 최근 프레임 저장)
+            if not is_speaking:
+                lookback_buffer.append(chunk)
+                if len(lookback_buffer) > LOOKBACK_FRAMES:
+                    lookback_buffer.pop(0)
+
             if is_voice:
                 consecutive_speech += 1
                 if not is_speaking and consecutive_speech >= 5:  # 5프레임 연속 음성이어야 시작
                     is_speaking = True
+                    # look-back 버퍼의 내용을 audio_buffer에 추가 (첫 음절 보존)
+                    audio_buffer.extend(lookback_buffer)
+                    speech_samples += sum(len(c) for c in lookback_buffer)
+                    lookback_buffer = []
                 if is_speaking:
                     audio_buffer.append(chunk)
                     speech_samples += len(chunk)
