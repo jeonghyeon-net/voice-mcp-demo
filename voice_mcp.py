@@ -131,7 +131,7 @@ def listen(timeout_seconds: int = 120, language: str = "ko") -> str:
     silence_count = 0
     is_speaking = False
 
-    SILENCE_THRESHOLD = 20
+    SILENCE_THRESHOLD = 60  # 약 1.8초 침묵 후 종료
     MIN_SPEECH_FRAMES = 5
     MAX_SPEECH_FRAMES = 1000  # 약 30초 제한
     max_frames = int(timeout_seconds * SAMPLE_RATE / FRAME_SIZE)
