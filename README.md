@@ -189,6 +189,8 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
 | `p` | 포르투갈어 |
 | `h` | 힌디어 |
 
+> **참고**: Kokoro 82M은 한국어 TTS를 지원하지 않습니다. 한국어 음성 출력이 필요하면 다른 TTS 엔진(Edge TTS, Google TTS 등)을 사용하세요.
+
 ### 영어 음성 목록
 
 | 음성 | 설명 |
