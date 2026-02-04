@@ -113,7 +113,7 @@ Claude Code에서:
 | 설정 | 기본값 | 설명 |
 |------|--------|------|
 | `VAD_THRESHOLD` | 0.85 | 음성 감지 임계값 |
-| `RMS_THRESHOLD` | 0.015 | 볼륨 임계값 |
+| `RMS_THRESHOLD` | 0.02 | 볼륨 임계값 |
 | `SILENCE_DURATION` | 1.5초 | 침묵 후 종료 시간 |
 | `timeout_seconds` | 300초 | 최대 대기 시간 |
 
@@ -269,7 +269,7 @@ speech_prob = vad_model(chunk_tensor, SAMPLE_RATE)
 rms = np.sqrt(np.mean(chunk ** 2))
 
 # 둘 다 임계값 넘어야 음성으로 인식
-is_voice = speech_prob > 0.85 and rms > 0.015
+is_voice = speech_prob > 0.85 and rms > 0.02
 ```
 
 ### 2. 음성 인식 (STT)

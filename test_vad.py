@@ -14,7 +14,7 @@ vad = load_silero_vad()
 SAMPLE_RATE = 16000
 CHUNK_SIZE = 512
 VAD_THRESHOLD = 0.85
-RMS_THRESHOLD = 0.015
+RMS_THRESHOLD = 0.02
 
 print(f"테스트 시작 - VAD>{VAD_THRESHOLD} AND RMS>{RMS_THRESHOLD} (10초간)")
 print("-" * 50)
