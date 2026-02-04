@@ -95,13 +95,7 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
     """
     마이크로 음성을 듣고 텍스트로 변환합니다.
 
-    ⚠️ 필수 플로우:
-    1. listen() 결과를 받으면
-    2. 먼저 speak()로 "~します" 등 할 일을 짧게 말하고
-    3. 그 다음 실제 작업 수행
-    4. 맥락에 따라 listen() 계속 또는 종료
-
-    예: "ファイルを確認します" → 파일 읽기 → "見つかりました" → ...
+    ⚠️ 다른 도구 호출 전후로 speak() 호출 필수. 진행 상황도 수시로 speak().
 
     Args:
         timeout_seconds: 최대 대기 시간 (초)
@@ -242,23 +236,17 @@ def speak(text: str, voice: str = "jf_alpha", speed: float = 1.0) -> str:
     """
     일본어 음성으로 말합니다.
 
-    ⚠️ 다른 도구 호출 전후로 반드시 speak() 호출!
-    - Read/Write/Edit 전: "確認します", "作ります", "修正します"
-    - Bash 전: "実行します", "テストします"
-    - 도구 호출 후: "できました", "見つけました", "エラーです"
-    - 여러 작업 시: 각 단계마다 speak() 호출
+    ⚠️ 영어/알파벳 금지! 일본어(한자/히라가나/카타카나)만 사용!
 
-    2-3단어로 짧게! 예: "次はテストします"
-
-    대화 종료: 모든 작업 완료 후 listen() 생략
+    ⚠️ speak() 후 반드시 listen() 호출! 예외: 사용자가 "끝", "바이바이", "고마워" 등 종료 신호를 보냈을 때만 생략
 
     Args:
-        text: 일본어 (짧게!)
+        text: 일본어 텍스트
         voice: 음성
         speed: 속도
 
     Returns:
-        재생 완료
+        "→ listen() 호출하세요" (종료 신호 없으면)
     """
     tts = get_tts()
     for _, _, audio in tts(text, voice=voice, speed=speed):
