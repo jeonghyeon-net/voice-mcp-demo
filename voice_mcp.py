@@ -124,6 +124,7 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
     is_speaking = False
     silence_samples = 0
     speech_samples = 0  # 실제 발화 샘플 수
+    consecutive_speech = 0  # 연속 음성 프레임
     start_time = time.time()
 
     captured_audio = None
@@ -137,21 +138,33 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
             chunk = chunk.flatten()
 
             # Silero VAD로 음성 확률 계산
-            chunk_tensor = torch.from_numpy(chunk)
-            speech_prob = vad_model(chunk_tensor, SAMPLE_RATE).item()
+            try:
+                chunk_tensor = torch.from_numpy(chunk).float()
+                speech_prob = vad_model(chunk_tensor, SAMPLE_RATE).item()
+            except Exception as e:
+                speech_prob = 0.0
 
-            if speech_prob > 0.3:  # 음성 감지
-                if not is_speaking:
+            # 볼륨 체크 (RMS) - 배경 소음 필터링
+            rms = np.sqrt(np.mean(chunk ** 2))
+            is_voice = speech_prob > 0.85 and rms > 0.02
+
+            if is_voice:
+                consecutive_speech += 1
+                if not is_speaking and consecutive_speech >= 5:  # 5프레임 연속 음성이어야 시작
                     is_speaking = True
-                audio_buffer.append(chunk)
-                speech_samples += len(chunk)
+                if is_speaking:
+                    audio_buffer.append(chunk)
+                    speech_samples += len(chunk)
                 silence_samples = 0
 
                 # 최대 길이 체크
                 if len(audio_buffer) * CHUNK_SIZE >= MAX_DURATION * SAMPLE_RATE:
                     captured_audio = np.concatenate(audio_buffer)
                     break
-            elif is_speaking:
+            else:
+                consecutive_speech = 0  # 연속 음성 리셋
+
+            if not is_voice and is_speaking:
                 audio_buffer.append(chunk)
                 silence_samples += len(chunk)
 
