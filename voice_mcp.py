@@ -146,7 +146,7 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
 
             # 볼륨 체크 (RMS) - 배경 소음 필터링
             rms = np.sqrt(np.mean(chunk ** 2))
-            is_voice = speech_prob > 0.85 and rms > 0.02
+            is_voice = speech_prob > 0.85 and rms > 0.015
 
             if is_voice:
                 consecutive_speech += 1

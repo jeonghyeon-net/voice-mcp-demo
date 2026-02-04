@@ -46,7 +46,17 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 5. 설치 확인
+### 5. 모델 다운로드
+
+```bash
+python setup_models.py
+```
+
+> ⚠️ **필수**: Claude Code 사용 전 반드시 실행하세요.
+> Whisper, Kokoro TTS, Silero VAD 모델을 미리 다운로드합니다.
+> 첫 실행 시 약 2-3GB 다운로드됩니다.
+
+### 6. 설치 확인
 
 ```bash
 # VAD 테스트 (마이크 테스트)
@@ -103,7 +113,7 @@ Claude Code에서:
 | 설정 | 기본값 | 설명 |
 |------|--------|------|
 | `VAD_THRESHOLD` | 0.85 | 음성 감지 임계값 |
-| `RMS_THRESHOLD` | 0.02 | 볼륨 임계값 |
+| `RMS_THRESHOLD` | 0.015 | 볼륨 임계값 |
 | `SILENCE_DURATION` | 1.5초 | 침묵 후 종료 시간 |
 | `timeout_seconds` | 300초 | 최대 대기 시간 |
 
@@ -231,6 +241,7 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
 ```
 vtuber/
 ├── voice_mcp.py      # MCP 서버 메인
+├── setup_models.py   # 모델 사전 다운로드
 ├── echo.py           # 독립 실행 버전 (Ollama 연동)
 ├── run.sh            # echo.py 실행 스크립트
 ├── test_vad.py       # VAD 테스트 도구
@@ -258,7 +269,7 @@ speech_prob = vad_model(chunk_tensor, SAMPLE_RATE)
 rms = np.sqrt(np.mean(chunk ** 2))
 
 # 둘 다 임계값 넘어야 음성으로 인식
-is_voice = speech_prob > 0.85 and rms > 0.02
+is_voice = speech_prob > 0.85 and rms > 0.015
 ```
 
 ### 2. 음성 인식 (STT)
