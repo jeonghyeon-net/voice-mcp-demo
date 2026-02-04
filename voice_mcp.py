@@ -106,7 +106,7 @@ def beep_end():
 
 
 @mcp.tool()
-def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
+def listen(timeout_seconds: int = 120, language: str = "ko") -> str:
     """
     마이크로 음성을 듣고 텍스트로 변환합니다.
 
@@ -133,6 +133,7 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
 
     SILENCE_THRESHOLD = 20
     MIN_SPEECH_FRAMES = 5
+    MAX_SPEECH_FRAMES = 1000  # 약 30초 제한
     max_frames = int(timeout_seconds * SAMPLE_RATE / FRAME_SIZE)
     frame_count = 0
 
@@ -140,6 +141,10 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
 
     captured_audio = None
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, blocksize=FRAME_SIZE) as stream:
+        # 시작 시 버퍼 비우기 (stale 데이터 제거)
+        for _ in range(10):
+            stream.read(FRAME_SIZE)
+
         while frame_count < max_frames:
             chunk, _ = stream.read(FRAME_SIZE)
             chunk = chunk.flatten()
@@ -156,6 +161,11 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
                     is_speaking = True
                 speech_buffer.append(chunk)
                 silence_count = 0
+
+                # 너무 길면 강제 종료
+                if len(speech_buffer) >= MAX_SPEECH_FRAMES:
+                    captured_audio = np.concatenate(speech_buffer)
+                    break
             elif is_speaking:
                 silence_count += 1
                 speech_buffer.append(chunk)
@@ -182,6 +192,12 @@ def listen(timeout_seconds: int = 1800, language: str = "ko") -> str:
             language=language
         )
         text = result.get("text", "").strip()
+
+        # 메모리 정리
+        del captured_audio
+        import gc
+        gc.collect()
+
         if text:
             return f"""[사용자]: {text}
 
