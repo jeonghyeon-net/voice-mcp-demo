@@ -6,8 +6,6 @@ Claude Code에서 음성으로 대화할 수 있게 해주는 MCP 서버입니�
 - **TTS**: Kokoro (다국어 지원: 일본어, 영어, 한국어, 중국어 등)
 - **VAD**: Silero VAD + RMS 이중 필터
 
-## 기본 설정
-
 > ⚠️ 현재 코드는 **한국어 입력 → 일본어 출력**으로 하드코딩되어 있습니다.
 > 다른 언어로 변경하려면 [언어 변경 가이드](#언어-변경-가이드) 섹션을 참고하세요.
 
@@ -73,8 +71,8 @@ python test_vad.py
 {
   "mcpServers": {
     "voice": {
-      "command": "/경로/vtuber/venv/bin/python",
-      "args": ["/경로/vtuber/voice_mcp.py"]
+      "command": "/경로/voice-mcp-demo/venv/bin/python",
+      "args": ["/경로/voice-mcp-demo/voice_mcp.py"]
     }
   }
 }
@@ -106,6 +104,47 @@ Claude Code에서:
 2. Claude가 일본어로 응답 (`speak`)
 3. 대화 계속 또는 종료
 
+### MCP 서버 등록 확인
+
+Claude Code 실행 후 `/mcp` 입력:
+
+```
+> /mcp
+✓ voice (connected)
+```
+
+`voice`가 connected 상태면 준비 완료.
+
+### 대화 예시
+
+```
+> listen
+
+⏺ voice - listen (MCP)
+  ⎿ { "result": "[사용자]: 안녕하세요\n\n⚠️ ..." }
+
+⏺ voice - speak (MCP)(text: "こんにちは！何かお手伝いできますか？")
+  ⎿ { "result": "→ listen() 호출하세요" }
+
+⏺ voice - listen (MCP)
+  ⎿ { "result": "[사용자]: 오늘 날씨 어때?\n\n⚠️ ..." }
+
+...
+```
+
+### 음성 대화 종료
+
+- "끝", "바이바이", "고마워" 등을 말하면 Claude가 대화 종료
+- 또는 Ctrl+C로 강제 종료
+- 타임아웃 (5분간 말 없으면 자동 종료)
+
+### 팁
+
+- **첫 실행 시** 모델 로딩으로 시간이 걸림 (TTS가 "初期化中" 안내)
+- **말할 때** 비프음 후 0.5초 정도 기다렸다가 말하기
+- **말 끝날 때** 1.5초 정도 조용히 있으면 인식 시작
+- **Claude 응답 후** 자동으로 다시 듣기 모드 (수동으로 listen 입력 필요할 수도 있음)
+
 ## 설정값
 
 `voice_mcp.py`에서 조정 가능:
@@ -116,34 +155,6 @@ Claude Code에서:
 | `RMS_THRESHOLD` | 0.02 | 볼륨 임계값 |
 | `SILENCE_DURATION` | 1.5초 | 침묵 후 종료 시간 |
 | `timeout_seconds` | 300초 | 최대 대기 시간 |
-
-## 문제 해결
-
-### 음성이 인식 안 됨
-- 마이크 권한 확인
-- RMS_THRESHOLD 낮추기 (0.01)
-
-### 배경 소음에 반응함
-- VAD_THRESHOLD 높이기 (0.9)
-- RMS_THRESHOLD 높이기 (0.03)
-
-### MCP 연결 실패
-- Python 경로 확인
-- `python -m py_compile voice_mcp.py`로 문법 검사
-
-## 테스트
-
-```bash
-# VAD 테스트
-./venv/bin/python test_vad.py
-
-# 독립 실행 (echo.py)
-./run.sh
-```
-
-## 라이선스
-
-MIT
 
 ## 언어 변경 가이드
 
@@ -236,26 +247,13 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
     """Speak in English. Text must be in English only!"""
 ```
 
-## 프로젝트 구조
-
-```
-voice-mcp-demo/
-├── voice_mcp.py      # MCP 서버 메인
-├── setup_models.py   # 모델 사전 다운로드
-├── echo.py           # 독립 실행 버전 (Ollama 연동)
-├── run.sh            # echo.py 실행 스크립트
-├── test_vad.py       # VAD 테스트 도구
-├── requirements.txt  # 의존성
-└── README.md
-```
-
 ## 동작 원리
 
 ### 전체 플로우
 
 ```
 [사용자] --말함--> [마이크] --오디오--> [Silero VAD] --음성구간--> [Whisper] --텍스트--> [Claude]
-                                                                                         |
+                                                                                        |
 [사용자] <--듣기-- [스피커] <--오디오-- [Kokoro TTS] <--텍스트------------------------------+
 ```
 
@@ -304,58 +302,43 @@ Claude Code <--stdio--> voice_mcp.py (FastMCP 서버)
 
 MCP (Model Context Protocol)는 Claude Code가 외부 도구를 호출할 수 있게 해주는 프로토콜입니다. `~/.mcp.json`에 서버를 등록하면 Claude가 해당 도구들을 사용할 수 있습니다.
 
-## Claude Code에서 사용하기
-
-### 1. MCP 서버 등록 확인
-
-Claude Code 실행 후 `/mcp` 입력:
+## 프로젝트 구조
 
 ```
-> /mcp
-✓ voice (connected)
+voice-mcp-demo/
+├── voice_mcp.py      # MCP 서버 메인
+├── setup_models.py   # 모델 사전 다운로드
+├── echo.py           # 독립 실행 버전 (Ollama 연동)
+├── run.sh            # echo.py 실행 스크립트
+├── test_vad.py       # VAD 테스트 도구
+├── requirements.txt  # 의존성
+└── README.md
 ```
 
-`voice`가 connected 상태면 준비 완료.
+## 테스트
 
-### 2. 음성 대화 시작
+```bash
+# VAD 테스트
+./venv/bin/python test_vad.py
 
-```
-> listen
-```
-
-입력하면:
-1. 비프음 (듣기 시작)
-2. 말하기
-3. 비프음 (인식 시작)
-4. Claude가 텍스트로 응답 + 일본어 음성 재생
-5. 대화 계속 또는 종료
-
-### 3. 대화 예시
-
-```
-> listen
-
-⏺ voice - listen (MCP)
-  ⎿ { "result": "[사용자]: 안녕하세요\n\n⚠️ ..." }
-
-⏺ voice - speak (MCP)(text: "こんにちは！何かお手伝いできますか？")
-  ⎿ { "result": "→ listen() 호출하세요" }
-
-⏺ voice - listen (MCP)
-  ⎿ { "result": "[사용자]: 오늘 날씨 어때?\n\n⚠️ ..." }
-
-...
+# 독립 실행 (echo.py)
+./run.sh
 ```
 
-### 4. 음성 대화 종료
+## 문제 해결
 
-- "끝", "바이바이", "고마워" 등을 말하면 Claude가 대화 종료
-- 또는 Ctrl+C로 강제 종료
-- 타임아웃 (5분간 말 없으면 자동 종료)
+### 음성이 인식 안 됨
+- 마이크 권한 확인
+- RMS_THRESHOLD 낮추기 (0.01)
 
-### 5. 팁
+### 배경 소음에 반응함
+- VAD_THRESHOLD 높이기 (0.9)
+- RMS_THRESHOLD 높이기 (0.03)
 
-- **첫 실행 시** 모델 로딩으로 시간이 걸림 (TTS가 "初期化中" 안내)
-- **말할 때** 비프음 후 0.5초 정도 기다렸다가 말하기
-- **말 끝날 때** 1.5초 정도 조용히 있으면 인식 시작
-- **Claude 응답 후** 자동으로 다시 듣기 모드 (수동으로 listen 입력 필요할 수도 있음)
+### MCP 연결 실패
+- Python 경로 확인
+- `python -m py_compile voice_mcp.py`로 문법 검사
+
+## 라이선스
+
+MIT
