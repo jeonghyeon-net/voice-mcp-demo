@@ -23,8 +23,8 @@ Claude Code에서 음성으로 대화할 수 있게 해주는 MCP 서버입니�
 ### 1. 저장소 클론
 
 ```bash
-git clone https://github.com/jeonghyeon-net/vtuber.git
-cd vtuber
+git clone https://github.com/jeonghyeon-net/voice-mcp-demo.git
+cd voice-mcp-demo
 ```
 
 ### 2. Python 3.11 설치 (없는 경우)
@@ -239,7 +239,7 @@ def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
 ## 프로젝트 구조
 
 ```
-vtuber/
+voice-mcp-demo/
 ├── voice_mcp.py      # MCP 서버 메인
 ├── setup_models.py   # 모델 사전 다운로드
 ├── echo.py           # 독립 실행 버전 (Ollama 연동)
