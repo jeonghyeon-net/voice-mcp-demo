@@ -1,6 +1,8 @@
-faster-whisper
+mlx-whisper
 kokoro>=0.3.4
 soundfile
 sounddevice
 numpy
-webrtcvad
+silero-vad
+torch
+mcp
