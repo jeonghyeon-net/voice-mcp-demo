@@ -55,6 +55,10 @@ def first_load_notice():
             sd.wait()
             break
     warmup_whisper()
+    # VAD 웜업
+    vad = get_vad()
+    dummy = torch.zeros(512)
+    vad(dummy, SAMPLE_RATE)
 
 SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 30
@@ -87,7 +91,7 @@ def beep_end():
 
 
 @mcp.tool()
-def listen(timeout_seconds: int = 120, language: str = "ko") -> str:
+def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
     """
     마이크로 음성을 듣고 텍스트로 변환합니다.
 
@@ -111,15 +115,16 @@ def listen(timeout_seconds: int = 120, language: str = "ko") -> str:
 
     CHUNK_SIZE = 512  # Silero VAD 권장 크기
     MAX_DURATION = 30  # 최대 녹음 30초
-    SILENCE_DURATION = 1.0  # 1초 침묵 후 종료
+    SILENCE_DURATION = 1.5  # 1.5초 침묵 후 종료
+    MIN_SPEECH_DURATION = 0.5  # 최소 0.5초 발화해야 유효
 
     beep_start()  # 🔊 듣기 시작
 
     audio_buffer = []
     is_speaking = False
     silence_samples = 0
-    max_samples = int(timeout_seconds * SAMPLE_RATE)
-    total_samples = 0
+    speech_samples = 0  # 실제 발화 샘플 수
+    start_time = time.time()
 
     captured_audio = None
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, blocksize=CHUNK_SIZE) as stream:
@@ -127,19 +132,19 @@ def listen(timeout_seconds: int = 120, language: str = "ko") -> str:
         for _ in range(5):
             stream.read(CHUNK_SIZE)
 
-        while total_samples < max_samples:
+        while (time.time() - start_time) < timeout_seconds:
             chunk, _ = stream.read(CHUNK_SIZE)
             chunk = chunk.flatten()
-            total_samples += len(chunk)
 
             # Silero VAD로 음성 확률 계산
             chunk_tensor = torch.from_numpy(chunk)
             speech_prob = vad_model(chunk_tensor, SAMPLE_RATE).item()
 
-            if speech_prob > 0.5:  # 음성 감지
+            if speech_prob > 0.3:  # 음성 감지
                 if not is_speaking:
                     is_speaking = True
                 audio_buffer.append(chunk)
+                speech_samples += len(chunk)
                 silence_samples = 0
 
                 # 최대 길이 체크
@@ -150,11 +155,18 @@ def listen(timeout_seconds: int = 120, language: str = "ko") -> str:
                 audio_buffer.append(chunk)
                 silence_samples += len(chunk)
 
-                # 침묵 지속 시 종료
-                if silence_samples >= SILENCE_DURATION * SAMPLE_RATE:
-                    if len(audio_buffer) > 0:
+                # 최소 발화 시간 충족 + 침묵 지속 시에만 종료
+                if speech_samples >= MIN_SPEECH_DURATION * SAMPLE_RATE:
+                    if silence_samples >= SILENCE_DURATION * SAMPLE_RATE:
                         captured_audio = np.concatenate(audio_buffer)
                         break
+                else:
+                    # 발화가 너무 짧으면 리셋 (잡음으로 간주)
+                    if silence_samples >= SILENCE_DURATION * SAMPLE_RATE:
+                        audio_buffer = []
+                        is_speaking = False
+                        speech_samples = 0
+                        silence_samples = 0
 
     # 스트림 닫힌 후 처리
     if captured_audio is not None and len(captured_audio) > SAMPLE_RATE * 0.3:
