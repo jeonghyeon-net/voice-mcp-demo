@@ -1,0 +1,6 @@
+faster-whisper
+kokoro>=0.3.4
+soundfile
+sounddevice
+numpy
+webrtcvad
