@@ -4,6 +4,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import os
 import time
 import numpy as np
 import sounddevice as sd
@@ -12,6 +13,22 @@ import mlx_whisper
 from silero_vad import load_silero_vad
 from kokoro import KPipeline
 from mcp.server.fastmcp import FastMCP
+import logging
+from pathlib import Path
+import fcntl
+
+# 디버그 로그 설정
+LOG_FILE = Path.home() / "Desktop" / "voice-mcp-demo" / "voice_debug.log"
+MIC_LOCK_FILE = Path.home() / "Desktop" / "voice-mcp-demo" / ".mic_lock"
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8'),
+    ]
+)
+logger = logging.getLogger(__name__)
+logger.info(f"voice 서버 시작 (PID: {os.getpid()})")
 
 # Silero VAD 로드
 torch.set_num_threads(1)
@@ -104,37 +121,77 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
     Returns:
         인식된 텍스트
     """
-    global _first_load_done
-    if not _first_load_done:
-        first_load_notice()
-        _first_load_done = True
+    logger.info(f"=== listen() 시작 (timeout={timeout_seconds}, lang={language}) ===")
 
-    vad_model = get_vad()
+    # 마이크 락 획득 시도 (다른 세션과 충돌 방지)
+    lock_file = None
+    try:
+        lock_file = open(MIC_LOCK_FILE, 'w')
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        logger.info("마이크 락 획득 성공")
+    except (IOError, OSError) as e:
+        logger.warning(f"마이크 락 획득 실패: {e}")
+        if lock_file:
+            lock_file.close()
+        return "[대기] 다른 세션에서 마이크를 사용 중입니다. 잠시 후 다시 시도하세요."
 
-    CHUNK_SIZE = 512  # Silero VAD 권장 크기
-    MAX_DURATION = 30  # 최대 녹음 30초
-    SILENCE_DURATION = 1.5  # 1.5초 침묵 후 종료
-    MIN_SPEECH_DURATION = 0.5  # 최소 0.5초 발화해야 유효
+    stream = None
+    try:
+        global _first_load_done
+        if not _first_load_done:
+            logger.info("첫 로드 - first_load_notice() 호출")
+            first_load_notice()
+            _first_load_done = True
 
-    beep_start()  # 🔊 듣기 시작
+        logger.info("VAD 모델 로드 중...")
+        vad_model = get_vad()
+        logger.info("VAD 모델 로드 완료")
 
-    audio_buffer = []
-    lookback_buffer = []  # 음성 시작 전 프레임 임시 저장
-    LOOKBACK_FRAMES = 10  # 약 0.32초 분량 저장
-    is_speaking = False
-    silence_samples = 0
-    speech_samples = 0  # 실제 발화 샘플 수
-    consecutive_speech = 0  # 연속 음성 프레임
-    start_time = time.time()
+        CHUNK_SIZE = 512  # Silero VAD 권장 크기
+        MAX_DURATION = 30  # 최대 녹음 30초
+        SILENCE_DURATION = 1.5  # 1.5초 침묵 후 종료
+        MIN_SPEECH_DURATION = 0.5  # 최소 0.5초 발화해야 유효
 
-    captured_audio = None
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, blocksize=CHUNK_SIZE) as stream:
+        logger.info("beep_start() 호출")
+        beep_start()  # 🔊 듣기 시작
+        logger.info("beep_start() 완료, 녹음 시작")
+
+        audio_buffer = []
+        lookback_buffer = []  # 음성 시작 전 프레임 임시 저장
+        LOOKBACK_FRAMES = 10  # 약 0.32초 분량 저장
+        is_speaking = False
+        silence_samples = 0
+        speech_samples = 0  # 실제 발화 샘플 수
+        consecutive_speech = 0  # 연속 음성 프레임
+        start_time = time.time()
+        log_counter = 0  # 로그 빈도 조절용
+
+        captured_audio = None
+        logger.info("InputStream 열기 시도...")
+        try:
+            stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype=np.float32, blocksize=CHUNK_SIZE)
+            stream.start()
+        except Exception as e:
+            logger.error(f"마이크 열기 실패: {e}")
+            return "[에러] 마이크를 열 수 없습니다. 다른 세션에서 사용 중일 수 있습니다."
+
+        logger.info("InputStream 열림")
         # 버퍼 비우기
         for _ in range(5):
-            stream.read(CHUNK_SIZE)
+            try:
+                stream.read(CHUNK_SIZE)
+            except Exception:
+                pass
 
         while (time.time() - start_time) < timeout_seconds:
-            chunk, _ = stream.read(CHUNK_SIZE)
+            try:
+                chunk, overflowed = stream.read(CHUNK_SIZE)
+                if overflowed:
+                    logger.warning("오디오 버퍼 오버플로우")
+                    continue
+            except Exception as e:
+                logger.error(f"마이크 읽기 에러: {e}")
+                return "[에러] 마이크 읽기 중 오류가 발생했습니다."
             chunk = chunk.flatten()
 
             # Silero VAD로 음성 확률 계산
@@ -142,11 +199,17 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
                 chunk_tensor = torch.from_numpy(chunk).float()
                 speech_prob = vad_model(chunk_tensor, SAMPLE_RATE).item()
             except Exception as e:
+                logger.error(f"VAD 에러: {e}")
                 speech_prob = 0.0
 
             # 볼륨 체크 (RMS) - 배경 소음 필터링
             rms = np.sqrt(np.mean(chunk ** 2))
             is_voice = speech_prob > 0.85 and rms > 0.02
+
+            # 주기적 로그 (10프레임마다, 약 0.3초)
+            log_counter += 1
+            if log_counter % 10 == 0:
+                logger.debug(f"VAD: prob={speech_prob:.3f}, rms={rms:.4f}, is_voice={is_voice}, speaking={is_speaking}, speech_samples={speech_samples}")
 
             # look-back 버퍼 관리 (음성 시작 전에도 최근 프레임 저장)
             if not is_speaking:
@@ -158,6 +221,7 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
                 consecutive_speech += 1
                 if not is_speaking and consecutive_speech >= 5:  # 5프레임 연속 음성이어야 시작
                     is_speaking = True
+                    logger.info(f"🎤 음성 시작 감지! prob={speech_prob:.3f}, rms={rms:.4f}")
                     # look-back 버퍼의 내용을 audio_buffer에 추가 (첫 음절 보존)
                     audio_buffer.extend(lookback_buffer)
                     speech_samples += sum(len(c) for c in lookback_buffer)
@@ -181,6 +245,7 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
                 # 최소 발화 시간 충족 + 침묵 지속 시에만 종료
                 if speech_samples >= MIN_SPEECH_DURATION * SAMPLE_RATE:
                     if silence_samples >= SILENCE_DURATION * SAMPLE_RATE:
+                        logger.info(f"🔇 침묵 감지 - 녹음 종료 (speech_samples={speech_samples})")
                         captured_audio = np.concatenate(audio_buffer)
                         break
                 else:
@@ -191,23 +256,27 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
                         speech_samples = 0
                         silence_samples = 0
 
-    # 스트림 닫힌 후 처리
-    if captured_audio is not None and len(captured_audio) > SAMPLE_RATE * 0.3:
-        beep_end()  # 🔊 인식 시작
-        result = mlx_whisper.transcribe(
-            captured_audio,
-            path_or_hf_repo="mlx-community/whisper-medium-mlx",
-            language=language
-        )
-        text = result.get("text", "").strip()
+        # 스트림 닫힌 후 처리
+        logger.info(f"루프 종료. captured_audio={captured_audio is not None}, len={len(captured_audio) if captured_audio is not None else 0}")
 
-        # 메모리 정리
-        del captured_audio
-        import gc
-        gc.collect()
+        if captured_audio is not None and len(captured_audio) > SAMPLE_RATE * 0.3:
+            logger.info(f"Whisper 시작 (audio_len={len(captured_audio)})")
+            beep_end()  # 🔊 인식 시작
+            result = mlx_whisper.transcribe(
+                captured_audio,
+                path_or_hf_repo="mlx-community/whisper-medium-mlx",
+                language=language
+            )
+            text = result.get("text", "").strip()
+            logger.info(f"Whisper 완료: '{text}'")
 
-        if text:
-            return f"""[사용자]: {text}
+            # 메모리 정리
+            del captured_audio
+            import gc
+            gc.collect()
+
+            if text:
+                return f"""[사용자]: {text}
 
 ⚠️ 【必須】次のステップ:
 1. まずspeak()で「〜します」と短く言う
@@ -217,7 +286,24 @@ def listen(timeout_seconds: int = 300, language: str = "ko") -> str:
 
 speak()を先に呼ばずに他のツールを使うのは禁止！"""
 
-    return "[타임아웃] 음성이 감지되지 않았습니다."
+        logger.warning("타임아웃 - 음성 감지 실패")
+        return "[타임아웃] 음성이 감지되지 않았습니다."
+
+    finally:
+        # 스트림 정리
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:
+                pass
+        # 락 해제
+        if lock_file:
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                lock_file.close()
+            except Exception:
+                pass
 
 
 @mcp.tool()
