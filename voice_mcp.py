@@ -352,9 +352,11 @@ def speak(text: str, voice: str = "jf_alpha", speed: float = 1.0) -> str:
     tts = get_tts()
     for _, _, audio in tts(text, voice=voice, speed=speed):
         if audio is not None:
-            sd.play(audio, 24000)
-            sd.wait()
-            break
+            try:
+                sd.play(audio, 24000)
+                sd.wait()
+            except Exception:
+                pass  # 재생 실패한 청크는 스킵
 
     return "→ listen() 호출하세요"
 
