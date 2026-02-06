@@ -1,5 +1,7 @@
 mlx-whisper
 kokoro>=0.3.4
+misaki[ja]>=0.9.4
+pyopenjtalk
 soundfile
 sounddevice
 numpy
