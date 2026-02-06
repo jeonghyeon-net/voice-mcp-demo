@@ -90,8 +90,8 @@ def _generate_beep(freq: int, duration: float, volume: float) -> np.ndarray:
     tone[-fade:] *= np.linspace(1, 0, fade)
     return tone.astype(np.float32)
 
-_beep_start_sound = _generate_beep(600, 0.1, 0.4)
-_beep_end_sound = _generate_beep(400, 0.08, 0.3)
+_beep_start_sound = _generate_beep(800, 0.15, 0.6)
+_beep_end_sound = _generate_beep(500, 0.12, 0.5)
 
 def beep_start():
     """듣기 시작 효과음"""
