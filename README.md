@@ -1,345 +1,196 @@
-# Voice MCP Server
+# Voice MCP Launcher (macOS)
 
-Claude Code에서 음성으로 대화할 수 있게 해주는 MCP 서버입니다.
+한국어 음성 대화를 기본값으로 제공하는 MCP 서버/런처 프로젝트입니다.
 
-- **STT**: MLX Whisper (Apple Silicon 최적화)
-- **TTS**: Kokoro (다국어 지원: 일본어, 영어, 중국어 등)
-- **VAD**: Silero VAD + RMS 이중 필터
+- 기본 출력: 한국어 TTS (로컬 모델, `sherpa-onnx`)
+- 롤백 출력: 일본어 Kokoro TTS (로컬 ONNX, `kokoro_onnx`)
+- STT: MLX Whisper (로컬 모델 번들)
+- VAD: Silero VAD
 
-> ⚠️ 현재 코드는 **한국어 입력 → 일본어 출력**으로 하드코딩되어 있습니다.
-> 다른 언어로 변경하려면 [언어 변경 가이드](#언어-변경-가이드) 섹션을 참고하세요.
+핵심 목표는 **사용자가 별도 모델 다운로드/스크립트 실행 없이 앱만 설치해서 실행**하는 것입니다.
 
-## 요구사항
+---
 
-- macOS (Apple Silicon M1/M2/M3)
-- Python 3.11 이상
-- Claude Code CLI
-- 마이크 (맥북 내장 마이크 또는 외장)
+## 빠른 실행 명령어
 
-## 설치
-
-### 1. 저장소 클론
+### 빌드 + 앱 실행
 
 ```bash
-git clone https://github.com/jeonghyeon-net/voice-mcp-demo.git
-cd voice-mcp-demo
+cd /Users/me/Desktop/voice-mcp-demo
+python3.11 -m venv venv
+source venv/bin/activate
+./scripts/build_macos_app.sh
+open /Users/me/Desktop/voice-mcp-demo/dist/VoiceMCPLauncher.app
 ```
 
-### 2. Python 3.11 설치 (없는 경우)
+### 일본어 롤백
 
 ```bash
-brew install python@3.11
+cd /Users/me/Desktop/voice-mcp-demo
+source venv/bin/activate
+./venv/bin/python app_main.py --set-language ja --install-mcp
 ```
 
-### 3. 가상환경 생성 및 활성화
+### 한국어로 복귀
+
+```bash
+cd /Users/me/Desktop/voice-mcp-demo
+source venv/bin/activate
+./venv/bin/python app_main.py --set-language ko --install-mcp
+```
+
+---
+
+## 1. 현재 동작 방식
+
+앱은 두 구성으로 빌드됩니다.
+
+1. `VoiceMCPLauncher.app`  
+   - 더블클릭 실행용 GUI 런처
+   - 출력 언어 설정(ko/ja)
+   - `~/.mcp.json`의 `voice` 서버 항목 자동 등록/갱신
+
+2. `voice-mcp-server` (런처 앱 내부 리소스)  
+   - Claude Code가 stdio로 직접 호출하는 MCP 서버 바이너리
+   - Whisper/TTS 모델을 앱 패키지에 포함
+
+---
+
+## 2. 최종 사용자 사용 방법
+
+> 아래는 빌드된 앱을 받은 사용자 기준입니다.
+
+1. `VoiceMCPLauncher.app` 실행
+2. 다이얼로그에서 출력 언어 선택
+   - `ko`: 한국어 출력(기본)
+   - `ja`: 일본어 Kokoro 출력(롤백)
+3. 완료 알림 확인
+4. Claude Code 재시작 후 `/mcp`에서 `voice` 연결 확인
+
+추가 설치/모델 다운로드/`setup_models.py` 실행은 필요 없습니다.
+
+런처는 CLI 모드도 지원합니다.
+
+```bash
+# 출력 언어만 변경
+./venv/bin/python app_main.py --set-language ko
+
+# MCP 설정만 갱신
+./venv/bin/python app_main.py --install-mcp
+```
+
+---
+
+## 3. 개발자 빌드 방법
+
+### 3.1 준비
+
+- macOS (Apple Silicon)
+- Python 3.11+
+- 가상환경 권장
 
 ```bash
 python3.11 -m venv venv
 source venv/bin/activate
 ```
 
-### 4. 의존성 설치
+### 3.2 앱 빌드
 
 ```bash
-pip install -r requirements.txt
+./scripts/build_macos_app.sh
 ```
 
-### 5. 모델 다운로드
+스크립트가 수행하는 작업:
 
-```bash
-python setup_models.py
-```
+1. 의존성 설치
+2. 모델 준비 (`setup_models.py`, 빌드 전용)
+3. MCP 서버 바이너리 빌드
+4. 런처 `.app` 빌드
 
-> ⚠️ **필수**: Claude Code 사용 전 반드시 실행하세요.
-> Whisper, Kokoro TTS, Silero VAD 모델을 미리 다운로드합니다.
-> 첫 실행 시 약 2-3GB 다운로드됩니다.
+산출물:
 
-### 6. 설치 확인
+- `dist/VoiceMCPLauncher.app`
 
-```bash
-# VAD 테스트 (마이크 테스트)
-python test_vad.py
-```
+---
 
-말하면 음성 확률이 표시되어야 합니다.
+## 4. 런타임 설정
 
-## MCP 설정
+런타임 설정 파일:
 
-`~/.mcp.json` 파일을 생성하거나 수정:
+- `~/Library/Application Support/VoiceMCP/runtime.json`
+
+기본 예시:
 
 ```json
 {
-  "mcpServers": {
-    "voice": {
-      "command": "/경로/voice-mcp-demo/venv/bin/python",
-      "args": ["/경로/voice-mcp-demo/voice_mcp.py"]
-    }
+  "output_language": "ko",
+  "whisper": {
+    "model_path": "assets/models/whisper-medium-mlx",
+    "fallback_repo": "mlx-community/whisper-medium-mlx"
+  },
+  "ko_tts": {
+    "model_dir": "assets/models/vits-mimic3-ko_KO-kss_low",
+    "speaker_id": 0,
+    "speed": 1.0
+  },
+  "ja_tts": {
+    "model_path": "assets/models/kokoro/kokoro-v1.0.onnx",
+    "voices_path": "assets/models/kokoro/voices-v1.0.bin",
+    "voice": "jf_alpha",
+    "speed": 1.0
   }
 }
 ```
 
-> `/경로/`를 실제 경로로 변경하세요.
+---
 
-## 사용법
+## 5. 일본어 롤백 방법
 
-Claude Code에서:
+1. `VoiceMCPLauncher.app` 실행
+2. 출력 언어를 `ja`로 저장
+3. Claude Code 재시작
 
-```
-> listen
-```
+이렇게 하면 `speak()`는 Kokoro 일본어 백엔드로 동작합니다.
 
-입력하면 음성 인식 모드가 시작됩니다.
+---
 
-### 도구
+## 6. 프로젝트 구조
 
-| 도구 | 설명 |
-|------|------|
-| `listen()` | 마이크로 음성 듣기 (한국어) |
-| `speak(text)` | 일본어 TTS로 응답 |
-| `listen_fixed(duration)` | 고정 시간 녹음 |
-
-### 플로우
-
-1. `listen` 입력 → 비프음 후 말하기
-2. Claude가 일본어로 응답 (`speak`)
-3. 대화 계속 또는 종료
-
-### MCP 서버 등록 확인
-
-Claude Code 실행 후 `/mcp` 입력:
-
-```
-> /mcp
-✓ voice (connected)
-```
-
-`voice`가 connected 상태면 준비 완료.
-
-### 대화 예시
-
-```
-> listen
-
-⏺ voice - listen (MCP)
-  ⎿ { "result": "[사용자]: 안녕하세요\n\n⚠️ ..." }
-
-⏺ voice - speak (MCP)(text: "こんにちは！何かお手伝いできますか？")
-  ⎿ { "result": "→ listen() 호출하세요" }
-
-⏺ voice - listen (MCP)
-  ⎿ { "result": "[사용자]: 오늘 날씨 어때?\n\n⚠️ ..." }
-
-...
-```
-
-### 음성 대화 종료
-
-- "끝", "바이바이", "고마워" 등을 말하면 Claude가 대화 종료
-- 또는 Ctrl+C로 강제 종료
-- 타임아웃 (5분간 말 없으면 자동 종료)
-
-### 팁
-
-- **첫 실행 시** 모델 로딩으로 시간이 걸림 (TTS가 "初期化中" 안내)
-- **말할 때** 비프음 후 0.5초 정도 기다렸다가 말하기
-- **말 끝날 때** 1.5초 정도 조용히 있으면 인식 시작
-- **Claude 응답 후** 자동으로 다시 듣기 모드 (수동으로 listen 입력 필요할 수도 있음)
-
-## 설정값
-
-`voice_mcp.py`에서 조정 가능:
-
-| 설정 | 기본값 | 설명 |
-|------|--------|------|
-| `VAD_THRESHOLD` | 0.85 | 음성 감지 임계값 |
-| `RMS_THRESHOLD` | 0.02 | 볼륨 임계값 |
-| `SILENCE_DURATION` | 1.5초 | 침묵 후 종료 시간 |
-| `timeout_seconds` | 300초 | 최대 대기 시간 |
-
-## 언어 변경 가이드
-
-기본값은 **한국어 입력 → 일본어 출력**입니다. 다른 언어로 변경하려면:
-
-### 영어 TTS로 변경
-
-`voice_mcp.py` 수정:
-
-```python
-# 1. TTS 언어 코드 변경 (get_tts 함수)
-_tts = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M')
-# 'a' = 미국 영어, 'b' = 영국 영어, 'j' = 일본어
-# 'k' = 한국어, 'z' = 중국어, 'f' = 프랑스어 등
-
-# 2. 음성 변경 (speak 함수의 기본값)
-def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
-# 영어 음성: af_heart, af_bella, am_adam, am_michael 등
-```
-
-### Kokoro 지원 언어
-
-| 코드 | 언어 |
-|------|------|
-| `a` | 미국 영어 |
-| `b` | 영국 영어 |
-| `j` | 일본어 |
-| `z` | 중국어 |
-| `f` | 프랑스어 |
-| `e` | 스페인어 |
-| `i` | 이탈리아어 |
-| `p` | 포르투갈어 |
-| `h` | 힌디어 |
-
-> **참고**: Kokoro 82M은 한국어 TTS를 지원하지 않습니다. 한국어 음성 출력이 필요하면 다른 TTS 엔진(Edge TTS, Google TTS 등)을 사용하세요.
-
-### 영어 음성 목록
-
-| 음성 | 설명 |
-|------|------|
-| `af_heart` | 미국 여성 (기본 추천) |
-| `af_bella` | 미국 여성 |
-| `af_sarah` | 미국 여성 |
-| `am_adam` | 미국 남성 |
-| `am_michael` | 미국 남성 |
-| `bf_emma` | 영국 여성 |
-| `bm_george` | 영국 남성 |
-
-### speak() 프롬프트 변경
-
-Claude가 영어로 응답하도록 `speak` 함수의 docstring 수정:
-
-```python
-@mcp.tool()
-def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
-    """
-    Speak in English.
-
-    ⚠️ Text must be in English only!
-
-    Args:
-        text: English text
-        voice: Voice
-        speed: Speed
-
-    Returns:
-        Playback complete
-    """
-```
-
-### 입력 언어 변경
-
-`listen()` 함수의 기본 language 파라미터 변경:
-
-```python
-def listen(timeout_seconds: int = 300, language: str = "en") -> str:
-# "ko" = 한국어, "en" = 영어, "ja" = 일본어
-```
-
-### 전체 영어 설정 예시
-
-```python
-# get_tts()
-_tts = KPipeline(lang_code='a', repo_id='hexgrad/Kokoro-82M')
-
-# listen()
-def listen(timeout_seconds: int = 300, language: str = "en") -> str:
-
-# speak()
-def speak(text: str, voice: str = "af_heart", speed: float = 1.0) -> str:
-    """Speak in English. Text must be in English only!"""
-```
-
-## 동작 원리
-
-### 전체 플로우
-
-```
-[사용자] --말함--> [마이크] --오디오--> [Silero VAD] --음성구간--> [Whisper] --텍스트--> [Claude]
-                                                                                        |
-[사용자] <--듣기-- [스피커] <--오디오-- [Kokoro TTS] <--텍스트------------------------------+
-```
-
-### 1. 음성 감지 (VAD)
-
-```python
-# Silero VAD가 음성 확률 계산 (0.0 ~ 1.0)
-speech_prob = vad_model(chunk_tensor, SAMPLE_RATE)
-
-# RMS(볼륨)도 함께 체크해서 배경 소음 필터링
-rms = np.sqrt(np.mean(chunk ** 2))
-
-# 둘 다 임계값 넘어야 음성으로 인식
-is_voice = speech_prob > 0.85 and rms > 0.02
-```
-
-### 2. 음성 인식 (STT)
-
-```python
-# MLX Whisper - Apple Silicon GPU 가속
-result = mlx_whisper.transcribe(
-    audio_data,
-    path_or_hf_repo="mlx-community/whisper-medium-mlx",
-    language="ko"  # 한국어
-)
-```
-
-### 3. 음성 합성 (TTS)
-
-```python
-# Kokoro TTS - 일본어 음성 생성
-tts = KPipeline(lang_code='j', repo_id='hexgrad/Kokoro-82M')
-for _, _, audio in tts(text, voice='jf_alpha', speed=1.0):
-    sd.play(audio, 24000)
-```
-
-### MCP 통신
-
-```
-Claude Code <--stdio--> voice_mcp.py (FastMCP 서버)
-                            |
-                            ├── listen()   # 도구 1
-                            ├── speak()    # 도구 2
-                            └── listen_fixed()  # 도구 3
-```
-
-MCP (Model Context Protocol)는 Claude Code가 외부 도구를 호출할 수 있게 해주는 프로토콜입니다. `~/.mcp.json`에 서버를 등록하면 Claude가 해당 도구들을 사용할 수 있습니다.
-
-## 프로젝트 구조
-
-```
+```text
 voice-mcp-demo/
-├── voice_mcp.py      # MCP 서버 메인
-├── setup_models.py   # 모델 사전 다운로드
-├── echo.py           # 독립 실행 버전 (Ollama 연동)
-├── run.sh            # echo.py 실행 스크립트
-├── test_vad.py       # VAD 테스트 도구
-├── requirements.txt  # 의존성
+├── app_main.py                 # 런처 앱 엔트리포인트
+├── voice_mcp.py                # MCP 서버 본체
+├── voice_mcp_server.py         # MCP 서버 실행 엔트리포인트
+├── runtime_config.py           # 런타임 설정/경로 유틸
+├── setup_models.py             # 빌드 전용 모델 준비
+├── scripts/
+│   └── build_macos_app.sh      # 앱 빌드 스크립트
+├── assets/
+│   └── models/                 # 번들 대상 모델(빌드 시 생성)
+├── requirements.txt
 └── README.md
 ```
 
-## 테스트
+---
 
-```bash
-# VAD 테스트
-./venv/bin/python test_vad.py
+## 7. 트러블슈팅
 
-# 독립 실행 (echo.py)
-./run.sh
-```
+### 마이크가 동작하지 않는 경우
 
-## 문제 해결
+1. macOS 시스템 설정에서 마이크 권한 확인
+2. Claude Code(또는 실행 주체 앱)의 마이크 권한 허용 확인
+3. 로그 확인:  
+   `~/Library/Application Support/VoiceMCP/voice_debug.log`
 
-### 음성이 인식 안 됨
-- 마이크 권한 확인
-- RMS_THRESHOLD 낮추기 (0.01)
+### MCP 연결이 안 되는 경우
 
-### 배경 소음에 반응함
-- VAD_THRESHOLD 높이기 (0.9)
-- RMS_THRESHOLD 높이기 (0.03)
+1. 런처 앱을 다시 실행해 설정 마법사 재완료
+2. `~/.mcp.json`의 `mcpServers.voice.command` 경로 확인
+3. Claude Code 재시작 후 `/mcp` 재확인
 
-### MCP 연결 실패
-- Python 경로 확인
-- `python -m py_compile voice_mcp.py`로 문법 검사
+---
 
-## 라이선스
+## 8. 참고
 
-MIT
+- `echo.py`는 레거시 실험 스크립트입니다.
+- 현재 권장 실행 경로는 `VoiceMCPLauncher.app` + 내장 `voice-mcp-server`입니다.

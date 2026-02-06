@@ -6,3 +6,6 @@ __pycache__/
 *.bin
 .DS_Store
 transcript.txt
+build/
+dist/
+assets/models/
